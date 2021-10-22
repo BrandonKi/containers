@@ -2,8 +2,6 @@
 #define STABLE_VECTOR_H
 
 #include <memory>
-#include <iostream>
-
 
 template <typename T, size_t BucketSize, typename Allocator>
 struct stable_vector_bucket {
@@ -49,6 +47,7 @@ class stable_vector {
 
   public:
     stable_vector(): num_buckets{1}, alloc{} {
+        static_assert(BucketSize > 0);
         first_bucket = traits::allocate(alloc, num_buckets);
         traits::construct(alloc, first_bucket);
         last_bucket = first_bucket;
@@ -100,7 +99,6 @@ class stable_vector {
   private:
 
     void allocate_bucket() {
-        std::cout << "new bucket\n";
         auto* new_bucket = traits::allocate(alloc, 1);
         traits::construct(alloc, new_bucket);
         last_bucket->next_bucket = new_bucket;
