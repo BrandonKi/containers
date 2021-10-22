@@ -2,6 +2,7 @@
 #define STABLE_VECTOR_H
 
 #include <memory>
+#include <iostream>
 
 
 template <typename T, size_t BucketSize, typename Allocator>
@@ -25,11 +26,11 @@ struct stable_vector_bucket {
         }
     }
 
-    T& at(std::size_t i) {
+    inline T& at(size_t i) {
         return data[i];
     }
 
-    const T& at(std::size_t i) const {
+    inline const T& at(size_t i) const {
         return data[i];
     }
 
@@ -72,13 +73,20 @@ class stable_vector {
     }
 
     // is this too slow?
-    // if BucketSize is base 2 then "&" can be used instead of "%"
-    // also maybe store an array of bucket pointers instead of traversing a linked list
+    // maybe store an array of bucket pointers instead of traversing a linked list
     T& at(size_t index) {
         stable_vector_bucket<T, BucketSize, Allocator>* current_bucket = first_bucket;
-        for(size_t i = 0; i < (index / BucketSize); ++i)
-            current_bucket = current_bucket->next_bucket;
-        return current_bucket->at(index % BucketSize);
+
+        if constexpr (BucketSize % 2 == 0) {
+            for(size_t i = 0; i < (index / BucketSize); ++i)
+                current_bucket = current_bucket->next_bucket;
+            return current_bucket->at(index & (BucketSize - 1));
+        }
+        else {
+            for(size_t i = 0; i < (index / BucketSize); ++i)
+                current_bucket = current_bucket->next_bucket;
+            return current_bucket->at(index % BucketSize);
+        }
     }
 
     T& operator[](size_t index) {
@@ -92,6 +100,7 @@ class stable_vector {
   private:
 
     void allocate_bucket() {
+        std::cout << "new bucket\n";
         auto* new_bucket = traits::allocate(alloc, 1);
         traits::construct(alloc, new_bucket);
         last_bucket->next_bucket = new_bucket;
