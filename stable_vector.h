@@ -15,7 +15,7 @@ struct stable_vector_bucket {
     }
 
     inline bool push(T t) {
-        if(index + 1 < BucketSize) {
+        if(index + 1 <= BucketSize) {
             traits::construct(alloc, data + index, t);
             ++index;
             return false;
@@ -40,14 +40,14 @@ struct stable_vector_bucket {
     Alloc alloc;
 };
 
-template <typename T, size_t BucketSize = 20, size_t InitialBuckets = 1, typename Allocator = std::allocator<T>>
+template <typename T, size_t BucketSize = 32, typename Allocator = std::allocator<T>>
 class stable_vector {
 
     using Alloc = typename std::allocator_traits<Allocator>::template rebind_alloc<stable_vector_bucket<T, BucketSize, Allocator>>;
     using traits = std::allocator_traits<Alloc>;
 
   public:
-    stable_vector(): num_buckets{InitialBuckets}, alloc{} {
+    stable_vector(): num_buckets{1}, alloc{} {
         first_bucket = traits::allocate(alloc, num_buckets);
         traits::construct(alloc, first_bucket);
         last_bucket = first_bucket;
@@ -71,15 +71,22 @@ class stable_vector {
         return first_bucket->index == 0;
     }
 
-    T& operator[](std::size_t index) {
-        // is this too slow?
-        // if BucketSize is base 2 then "&" can be used instead of "%"
-        // also maybe store an array of bucket pointers instead of traversing the linked list
-        return last_bucket->at(index % BucketSize);
+    // is this too slow?
+    // if BucketSize is base 2 then "&" can be used instead of "%"
+    // also maybe store an array of bucket pointers instead of traversing a linked list
+    T& at(size_t index) {
+        stable_vector_bucket<T, BucketSize, Allocator>* current_bucket = first_bucket;
+        for(size_t i = 0; i < (index / BucketSize); ++i)
+            current_bucket = current_bucket->next_bucket;
+        return current_bucket->at(index % BucketSize);
     }
 
-    const T& operator[](std::size_t index) const {
-        return last_bucket->at(index % BucketSize);
+    T& operator[](size_t index) {
+        return at(index);
+    }
+
+    const T& operator[](size_t index) const {
+        return at(index);
     }
 
   private:
