@@ -1,21 +1,30 @@
-#ifndef STABLE_VECTOR_H
-#define STABLE_VECTOR_H
+#ifndef BUCKET_LIST_H
+#define BUCKET_LIST_H
 
 #include <memory>
 
+namespace bucket_list_internal {
+
 template <typename T, size_t BucketSize, typename Allocator>
-struct stable_vector_bucket {
+struct bucket {
 
+    //using BucketAlloc = typename std::allocator_traits<Allocator>::template rebind_alloc<stable_vector_bucket>;
+    //using BucketTraits = std::allocator_traits<Alloc>;
     using Alloc = typename std::allocator_traits<Allocator>::template rebind_alloc<T>;
-    using traits = std::allocator_traits<Alloc>;
+    using Traits = std::allocator_traits<Alloc>;
 
-    stable_vector_bucket(): next_bucket{nullptr}, index{0}, data{}, alloc{} {
-        data = traits::allocate(alloc, BucketSize);
+    bucket(): next_bucket{nullptr}, index{0}, data{}, alloc{} {
+        data = Traits::allocate(alloc, BucketSize);
+    }
+
+    ~bucket() {
+        Traits::destroy(alloc, data);
+        Traits::deallocate(alloc, data, BucketSize);
     }
 
     inline bool push(T t) {
         if(index + 1 <= BucketSize) {
-            traits::construct(alloc, data + index, t);
+            Traits::construct(alloc, data + index, t);
             ++index;
             return false;
         }
@@ -32,25 +41,39 @@ struct stable_vector_bucket {
         return data[i];
     }
 
-    stable_vector_bucket<T, BucketSize, Allocator>* next_bucket;
+    // 8 bytes
+    bucket<T, BucketSize, Allocator>* next_bucket;
+    // 8 bytes
     size_t index;
     // put these two in a compressed pair
+    // 8 bytes
     T* data;
     Alloc alloc;
 };
 
-template <typename T, size_t BucketSize = 32, typename Allocator = std::allocator<T>>
-class stable_vector {
+}
 
-    using Alloc = typename std::allocator_traits<Allocator>::template rebind_alloc<stable_vector_bucket<T, BucketSize, Allocator>>;
+template <typename T, size_t BucketSize = 32, typename Allocator = std::allocator<T>>
+class bucket_list {
+
+    using Alloc = typename std::allocator_traits<Allocator>::template rebind_alloc<bucket_list_internal::bucket<T, BucketSize, Allocator>>;
     using traits = std::allocator_traits<Alloc>;
 
   public:
-    stable_vector(): num_buckets{1}, alloc{} {
+    bucket_list(): num_buckets{1}, alloc{} {
         static_assert(BucketSize > 0);
         first_bucket = traits::allocate(alloc, num_buckets);
         traits::construct(alloc, first_bucket);
         last_bucket = first_bucket;
+    }
+
+    ~bucket_list() {
+        while(first_bucket) {
+            auto* temp = first_bucket->next_bucket;
+            traits::destroy(alloc, first_bucket);
+            traits::deallocate(alloc, first_bucket, 1);
+            first_bucket = temp;
+        }
     }
 
     void push_back(T t) {
@@ -74,7 +97,7 @@ class stable_vector {
     // is this too slow?
     // maybe store an array of bucket pointers instead of traversing a linked list
     T& at(size_t index) {
-        stable_vector_bucket<T, BucketSize, Allocator>* current_bucket = first_bucket;
+        bucket_list_internal::bucket<T, BucketSize, Allocator>* current_bucket = first_bucket;
 
         if constexpr (BucketSize % 2 == 0) {
             for(size_t i = 0; i < (index / BucketSize); ++i)
@@ -105,13 +128,15 @@ class stable_vector {
         last_bucket = new_bucket;
     }
 
+
     // put these two into a "compressed pair" to save space
+    // 8 bytes
     size_t num_buckets;
     Alloc alloc;
-
-    stable_vector_bucket<T, BucketSize, Allocator>* first_bucket;
-    stable_vector_bucket<T, BucketSize, Allocator>* last_bucket;
+    // 16 bytes
+    bucket_list_internal::bucket<T, BucketSize, Allocator>* first_bucket;
+    bucket_list_internal::bucket<T, BucketSize, Allocator>* last_bucket;
 
 };
 
-#endif //STABLE_VECTOR_H
+#endif //BUCKET_LIST_H
