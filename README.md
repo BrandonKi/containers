@@ -4,8 +4,10 @@ These are just a bunch of various data structures I find myself using often, so 
 
 - [ ] stable_vector
 - [X] bucket_list
+- [ ] small_vector
 - [ ] compressed_pair
-- [ ] bucket_allocator
 - [ ] string_pool
 - [ ] instrusive_list
+- [ ] bucket_allocator
 - [ ] arena_allocator
+- [ ] noisy_allocator
