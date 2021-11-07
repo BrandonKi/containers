@@ -13,16 +13,20 @@ struct bucket {
     using Alloc = typename std::allocator_traits<Allocator>::template rebind_alloc<T>;
     using Traits = std::allocator_traits<Alloc>;
 
-    bucket(): next_bucket{nullptr}, index{0}, data{}, alloc{} {
+    bucket(): next_bucket{nullptr}, index{0}, data{} {
+
+    }
+
+    inline void internal_allocate(Alloc& alloc) {
         data = Traits::allocate(alloc, BucketSize);
     }
 
-    ~bucket() {
+    inline void internal_deallocate(Alloc& alloc) {
         Traits::destroy(alloc, data);
         Traits::deallocate(alloc, data, BucketSize);
     }
 
-    inline bool push(T t) {
+    inline bool push(Alloc& alloc, T t) {
         if(index + 1 <= BucketSize) {
             Traits::construct(alloc, data + index, t);
             ++index;
@@ -41,14 +45,10 @@ struct bucket {
         return data[i];
     }
 
-    // 8 bytes
     bucket<T, BucketSize, Allocator>* next_bucket;
-    // 8 bytes
+    // each bucket doesn't need to track its index
     size_t index;
-    // put these two in a compressed pair
-    // 8 bytes
     T* data;
-    Alloc alloc;
 };
 
 }
@@ -57,33 +57,35 @@ template <typename T, size_t BucketSize = 32, typename Allocator = std::allocato
 class bucket_list {
 
     using Alloc = typename std::allocator_traits<Allocator>::template rebind_alloc<bucket_list_internal::bucket<T, BucketSize, Allocator>>;
-    using traits = std::allocator_traits<Alloc>;
+    using Traits = std::allocator_traits<Alloc>;
+    using SubAlloc = typename std::allocator_traits<Allocator>::template rebind_alloc<T>;
+    using SubTraits = std::allocator_traits<SubAlloc>;
 
   public:
-    bucket_list(): num_buckets{1}, alloc{} {
+    bucket_list(): num_buckets{1}, alloc{}, sub_alloc{} {
         static_assert(BucketSize > 0);
-        first_bucket = traits::allocate(alloc, num_buckets);
-        traits::construct(alloc, first_bucket);
+        first_bucket = Traits::allocate(alloc, num_buckets);
+        Traits::construct(alloc, first_bucket);
+        first_bucket->internal_allocate(sub_alloc);
         last_bucket = first_bucket;
     }
 
     ~bucket_list() {
         while(first_bucket) {
             auto* temp = first_bucket->next_bucket;
-            traits::destroy(alloc, first_bucket);
-            traits::deallocate(alloc, first_bucket, 1);
+            first_bucket->internal_deallocate(sub_alloc);
+            Traits::destroy(alloc, first_bucket);
+            Traits::deallocate(alloc, first_bucket, 1);
             first_bucket = temp;
         }
     }
 
     void push_back(T t) {
-        bool reallocate = last_bucket->push(t);
+        bool reallocate = last_bucket->push(sub_alloc, t);
         if(!reallocate)
             return;
         allocate_bucket();
-        // there's a possibility for some weird stuff to happen here...
-        // probably should static assert bucket size isn't 0
-        last_bucket->push(t);
+        last_bucket->push(sub_alloc, t);
     }
 
     size_t size() {
@@ -122,21 +124,23 @@ class bucket_list {
   private:
 
     void allocate_bucket() {
-        auto* new_bucket = traits::allocate(alloc, 1);
-        traits::construct(alloc, new_bucket);
+        auto* new_bucket = Traits::allocate(alloc, 1);
+        Traits::construct(alloc, new_bucket);
+        new_bucket->internal_allocate(sub_alloc);
         last_bucket->next_bucket = new_bucket;
         last_bucket = new_bucket;
     }
 
-
-    // put these two into a "compressed pair" to save space
-    // 8 bytes
+    // 8
     size_t num_buckets;
-    Alloc alloc;
-    // 16 bytes
-    bucket_list_internal::bucket<T, BucketSize, Allocator>* first_bucket;
-    bucket_list_internal::bucket<T, BucketSize, Allocator>* last_bucket;
 
+    // put all of these into a "compressed pair" to save space
+    // 8
+    bucket_list_internal::bucket<T, BucketSize, Allocator>* first_bucket;
+    // 8
+    bucket_list_internal::bucket<T, BucketSize, Allocator>* last_bucket;
+    Alloc alloc;
+    SubAlloc sub_alloc;
 };
 
 #endif //BUCKET_LIST_H
