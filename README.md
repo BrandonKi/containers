@@ -10,4 +10,4 @@ These are just a bunch of various data structures I find myself using often, so 
 - [ ] instrusive_list
 - [ ] bucket_allocator
 - [ ] arena_allocator
-- [ ] noisy_allocator
+- [X] noisy_allocator
