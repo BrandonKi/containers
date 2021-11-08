@@ -1,6 +1,8 @@
 #ifndef BUCKET_LIST_H
 #define BUCKET_LIST_H
 
+#include "compressed_pair.h"
+
 #include <memory>
 
 namespace bucket_list_internal {
@@ -62,44 +64,44 @@ class bucket_list {
     using SubTraits = std::allocator_traits<SubAlloc>;
 
   public:
-    bucket_list(): num_buckets{1}, alloc{}, sub_alloc{} {
+    bucket_list(): num_buckets{1}, alloc_and_begin{nullptr}, suballoc_and_end{nullptr} {
         static_assert(BucketSize > 0);
-        first_bucket = Traits::allocate(alloc, num_buckets);
-        Traits::construct(alloc, first_bucket);
-        first_bucket->internal_allocate(sub_alloc);
-        last_bucket = first_bucket;
+        alloc_and_begin.second() = Traits::allocate(alloc_and_begin.first(), num_buckets);
+        Traits::construct(alloc_and_begin.first(), alloc_and_begin.second());
+        alloc_and_begin.second()->internal_allocate(suballoc_and_end.first());
+        suballoc_and_end.second() = alloc_and_begin.second();
     }
 
     ~bucket_list() {
-        while(first_bucket) {
-            auto* temp = first_bucket->next_bucket;
-            first_bucket->internal_deallocate(sub_alloc);
-            Traits::destroy(alloc, first_bucket);
-            Traits::deallocate(alloc, first_bucket, 1);
-            first_bucket = temp;
+        while(alloc_and_begin.second()) {
+            auto* temp = alloc_and_begin.second()->next_bucket;
+            alloc_and_begin.second()->internal_deallocate(suballoc_and_end.first());
+            Traits::destroy(alloc_and_begin.first(), alloc_and_begin.second());
+            Traits::deallocate(alloc_and_begin.first(), alloc_and_begin.second(), 1);
+            alloc_and_begin.second() = temp;
         }
     }
 
     void push_back(T t) {
-        bool reallocate = last_bucket->push(sub_alloc, t);
+        bool reallocate = suballoc_and_end.second()->push(suballoc_and_end.first(), t);
         if(!reallocate)
             return;
         allocate_bucket();
-        last_bucket->push(sub_alloc, t);
+        suballoc_and_end.second()->push(suballoc_and_end.first(), t);
     }
 
     size_t size() {
-        return ((num_buckets - 1) * BucketSize) + last_bucket->index;
+        return ((num_buckets - 1) * BucketSize) + suballoc_and_end.second()->index;
     }
 
     bool empty() {
-        return first_bucket->index == 0;
+        return alloc_and_begin.second()->index == 0;
     }
 
     // is this too slow?
     // maybe store an array of bucket pointers instead of traversing a linked list
     T& at(size_t index) {
-        bucket_list_internal::bucket<T, BucketSize, Allocator>* current_bucket = first_bucket;
+        bucket_list_internal::bucket<T, BucketSize, Allocator>* current_bucket = alloc_and_begin.second();
 
         if constexpr (BucketSize % 2 == 0) {
             for(size_t i = 0; i < (index / BucketSize); ++i)
@@ -124,11 +126,11 @@ class bucket_list {
   private:
 
     void allocate_bucket() {
-        auto* new_bucket = Traits::allocate(alloc, 1);
-        Traits::construct(alloc, new_bucket);
-        new_bucket->internal_allocate(sub_alloc);
-        last_bucket->next_bucket = new_bucket;
-        last_bucket = new_bucket;
+        auto* new_bucket = Traits::allocate(alloc_and_begin.first(), 1);
+        Traits::construct(alloc_and_begin.first(), new_bucket);
+        new_bucket->internal_allocate(suballoc_and_end.first());
+        suballoc_and_end.second()->next_bucket = new_bucket;
+        suballoc_and_end.second() = new_bucket;
     }
 
     // 8
@@ -136,11 +138,9 @@ class bucket_list {
 
     // put all of these into a "compressed pair" to save space
     // 8
-    bucket_list_internal::bucket<T, BucketSize, Allocator>* first_bucket;
+    compressed_pair<Alloc, bucket_list_internal::bucket<T, BucketSize, Allocator>*> alloc_and_begin;
     // 8
-    bucket_list_internal::bucket<T, BucketSize, Allocator>* last_bucket;
-    Alloc alloc;
-    SubAlloc sub_alloc;
+    compressed_pair<SubAlloc, bucket_list_internal::bucket<T, BucketSize, Allocator>*> suballoc_and_end;
 };
 
 #endif //BUCKET_LIST_H
