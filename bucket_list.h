@@ -136,7 +136,6 @@ class bucket_list {
     // 8
     size_t num_buckets;
 
-    // put all of these into a "compressed pair" to save space
     // 8
     compressed_pair<Alloc, bucket_list_internal::bucket<T, BucketSize, Allocator>*> alloc_and_begin;
     // 8
